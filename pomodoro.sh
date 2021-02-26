@@ -16,6 +16,7 @@ savedtime="$DIR/savedtime"
 savedmode="$DIR/savedmode"
 savedcyclecount="$DIR/savedcyclecount"
 lock="$DIR/lock"
+savedpausetime="$DIR/savedpausetime"
 
 pomodoro_cycle=$(( pomodoro_time * 60 ))
 short_break_cycle=$(( short_break_time * 60 ))
@@ -26,6 +27,8 @@ startmsg="Pomodoro started, you have $pomodoro_time minutes left"
 endmsg_shortbreak="Pomodoro ended, stop the work and take short break"
 endmsg_longbreak="Pomodoro ended, stop the work and take long break"
 killmsg="Pomodoro stopped, restart when you are ready"
+pausedmsg="Timer paused"
+unpausemsg="Timer unpaused"
 
 function xnotify () {
 	notify-send -t $notify_time -i "$DIR/icons/running.png" "$summary" "$1"
@@ -36,6 +39,24 @@ function terminate_pomodoro () {
 	echo "" > "$savedtime"
 	echo "idle" > "$savedmode"
 	echo "" > "$savedcyclecount"
+}
+
+function pause_timer () {
+	current_time=$( date +%s )
+	echo $current_time > "$savedpausetime"
+	mode=$( cat "$savedmode" 2> /dev/null )
+	echo "paused_${mode}" > "$savedmode"
+	xnotify "$pausedmsg"
+}
+
+function unpause_timer () {
+	current_time=$( date +%s )
+	pause_time=$( cat "$savedpausetime" 2> /dev/null )
+	start_time=$( cat "$savedtime" 2> /dev/null )
+	echo $(( start_time + (current_time - pause_time) )) > "$savedtime"
+	mode=$( cat "$savedmode" | cut -d _ -f 2 2> /dev/null )
+	echo "${mode}" > "$savedmode"
+	xnotify "$unpausemsg"
 }
 
 function render_status () {
@@ -79,9 +100,17 @@ if [ "$1" == "-n" ] ; then
 		echo $current_time > "$savedtime"
 		echo "pomodoro" > "$savedmode"
 		echo "0" > "$savedcyclecount"
+	elif [[ "$mode" =~ ^paused_.* ]] ; then
+		unpause_timer
 	else
-		terminate_pomodoro
-
+		out=`zenity --question --title="Pomodoro" --text "Please select timer option." \
+--extra-button="Pause" --cancel-label="Do nothing" --ok-label="Stop"`
+		result=$?
+		if [[ "$out" == "Pause" ]] ; then
+			pause_timer
+		elif [[ "$result" == 0 ]] ; then
+			terminate_pomodoro
+		fi
 	fi
 else
 	# periodic check, and redrawing
@@ -90,7 +119,11 @@ else
 		echo "<click>$DIR/pomodoro.sh -n</click>"
 		echo "<img>$DIR/icons/stopped$size.png</img>"
 		echo "<tool>No Pomodoro Running</tool>"
-
+	elif [[ "$mode" =~ ^paused_.* ]] ; then
+		echo "<click>$DIR/pomodoro.sh -n</click>"
+		echo "<img>$DIR/icons/stopped$size.png</img>"
+		echo "<tool>Timer paused</tool>"
+		echo "<txt>paused</txt>"
 	else
 		# timer running
 
