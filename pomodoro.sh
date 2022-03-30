@@ -9,23 +9,50 @@ short_break_time=10          # Time for the short break cycle (in minutes)
 long_break_time=55           # Time for the long break cycle (in minutes)
 cycles_between_long_breaks=3 # How many cycles should we do before long break
 notify_time=10               # Time for notification to hang (in seconds)
+custom_cmd="${HOME}/.pomodororc" # Default custom command handler
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # default configuration values
-pomodoro_cycle=$(( pomodoro_time * 60 ))
-short_break_cycle=$(( short_break_time * 60 ))
-long_break_cycle=$(( long_break_time * 60 ))
 notify_time=$(( notify_time * 1000 ))
 summary="Pomodoro"
-endmsg_shortbreak="Pomodoro ended, stop the work and take short break"
-endmsg_longbreak="Pomodoro ended, stop the work and take long break"
+endmsg_shortbreak="Pomodoro ended, time to take short break"
+endmsg_longbreak="Pomodoro ended, time to take long break"
 killmsg="Pomodoro stopped, restart when you are ready"
 pausedmsg="Timer paused"
 unpausemsg="Timer unpaused"
 
 function xnotify () {
   notify-send -t "${notify_time}" -i "${DIR}/icons/running.png" "$summary" "$1"
+}
+
+function run_custom_cmd() {
+  if [[ -x "${custom_cmd}" ]]; then
+    "${custom_cmd}" --command "$1" &>>/tmp/pomodororc.log
+  fi
+}
+
+function handle_custom_cmd() {
+  local current_mode="$1"
+  local next_mode="$2"
+  # Handle custom cmmand for finishing modes
+  if [[ "${current_mode}" == "pomodoro" ]]; then
+    run_custom_cmd pomodoro_end
+  elif [[ "${current_mode}" == "longbreak" ]]; then
+    run_custom_cmd long_break_end
+  elif [[ "${current_mode}" == "shortbreak" ]]; then
+    run_custom_cmd short_break_end
+  fi
+
+
+  # Handle custom command for starting modes
+  if [[ "${next_mode}" == "longbreak" ]]; then
+    run_custom_cmd long_break_start
+  elif [[ "${next_mode}" == "shortbreak" ]]; then
+    run_custom_cmd short_break_start
+  elif [[ "${next_mode}" == "pomodoro" ]]; then
+    run_custom_cmd pomodoro_start
+  fi
 }
 
 function terminate_pomodoro () {
@@ -43,7 +70,7 @@ function pause_timer () {
   xnotify "$pausedmsg"
 }
 
-function unpause_timer () {
+function resume_timer () {
   current_time=$( date +%s )
   local pause_time=$( cat "${savedpausetime}" 2> /dev/null )
   local start_time=$( cat "${savedtime}" 2> /dev/null )
@@ -71,11 +98,11 @@ function render_status () {
   # when pomodoro is off or break is active stop icon is displayed,
   # but user can intuitively and immidiatelly notice the difference,
   # because if it is break remaining time is displayed.
-  local remaining_time_display=$(printf "%02d:%02d" $(( remaining_time / 60 )) $(( remaining_time % 60 )))
-  echo "<click>${DIR}/pomodoro.sh -n --storage \"${storage}\" --pomodoro_time ${pomodoro_time}</click>"
-  echo "<txt>${remaining_time_display}</txt>"
+  local remaining_time_display=$(printf " %02d:%02d " $(( remaining_time / 60 )) $(( remaining_time % 60 )))
+  echo "<txt> ${remaining_time_display} </txt>"
   echo "<img>${DIR}/icons/${display_icon}${size}.png</img>"
   echo "<tool>${display_mode}: You have ${remaining_time_display} min left [#${saved_cycle_count}]</tool>"
+  gen_pomodoro_click_str
 }
 
 
@@ -115,6 +142,10 @@ function parse_args() {
         cycles_between_long_breaks="$2"
         shift # past value
         ;;
+      --custom_cmd)
+        custom_cmd="$2"
+        shift
+        ;;
       *)    # unknown option
         # ignore unknown argument
         shift # past argument
@@ -137,6 +168,15 @@ function parse_args() {
   long_break_cycle=$(( long_break_time * 60 ))
 }
 
+function gen_pomodoro_click_str() {
+  cat<<EOF
+<click>${DIR}/pomodoro.sh -n --storage "${storage}" --pomodoro_time "${pomodoro_time}" --custom_cmd "${custom_cmd}" --cycles_between_long_breaks "${cycles_between_long_breaks}"  --long_break_time "${long_break_time}" --short_break_time "${short_break_time}" --sound "${sound}"</click>
+EOF
+  cat<<EOF
+<txtclick>${DIR}/pomodoro.sh -n --storage "${storage}" --pomodoro_time "${pomodoro_time}" --custom_cmd "${custom_cmd}" --cycles_between_long_breaks "${cycles_between_long_breaks}"  --long_break_time "${long_break_time}" --short_break_time "${short_break_time}" --sound "${sound}"</txtclick>
+EOF
+}
+
 parse_args "$@"
 
 ( flock -x 200
@@ -147,7 +187,6 @@ parse_args "$@"
   fi
 
   current_time=$( date +%s )
-
   if [ "${click}" == "yes" ] ; then
     if [ "${mode}" == "idle" ] ; then
       xnotify "${startmsg}"
@@ -155,29 +194,33 @@ parse_args "$@"
       echo "pomodoro" > "${savedmode}"
       echo "0" > "${savedcyclecount}"
     elif [[ "${mode}" =~ ^paused_.* ]] ; then
-      unpause_timer
+      resume_timer
+      run_custom_cmd resume
     else
       out=$(zenity --question --title="Pomodoro" \
         --text "Please select timer option." \
         --extra-button="Pause" --cancel-label="Do nothing" --ok-label="Stop")
       result=$?
       if [[ "${out}" == "Pause" ]] ; then
+        run_custom_cmd pause
         pause_timer
       elif [[ "${result}" == 0 ]] ; then
         terminate_pomodoro
+        run_custom_cmd pomodoro_end
       fi
     fi
   else
     # periodic check, and redrawing
     if [ "${mode}" == "idle" ] ; then
-      echo "<click>${DIR}/pomodoro.sh -n --storage \"${storage}\" --pomodoro_time ${pomodoro_time}</click>"
       echo "<img>${DIR}/icons/stopped${size}.png</img>"
+      echo "<txt> Idle </txt>"
       echo "<tool>No Pomodoro Running</tool>"
+      gen_pomodoro_click_str
     elif [[ "${mode}" =~ ^paused_.* ]] ; then
-      echo "<click>${DIR}/pomodoro.sh -n</click>"
       echo "<img>${DIR}/icons/stopped${size}.png</img>"
       echo "<tool>Timer paused</tool>"
-      echo "<txt>paused</txt>"
+      echo "<txt> Paused </txt>"
+      gen_pomodoro_click_str
     else
       # timer running
 
@@ -207,11 +250,12 @@ parse_args "$@"
       if [ ${remaining_time} -le 0 ] ; then
         # If remaining_time is is below zero for more that short break cycle,
         # that makes pomodoro invalid.
-        # This, for example, can occure when computer was turned off.
+        # This, for example, can occurr when computer was turned off.
         # In such case terminate pomodoro and exit.
         invalid_pomodoro_time_margin=$((-short_break_cycle))
-        if [ ${remaining_time} -lt $invalid_pomodoro_time_margin ] ; then
+        if [ ${remaining_time} -lt ${invalid_pomodoro_time_margin} ] ; then
           terminate_pomodoro
+          run_custom_cmd pomodoro_end
           exit 1
         fi
 
@@ -230,7 +274,8 @@ parse_args "$@"
           echo "${cycle_count}" > "${savedcyclecount}"
           render_status ${new_mode} ${new_remaining_time} ${cycle_count}
         else
-          echo "pomodoro" > "${savedmode}"
+          new_mode="pomodoro"
+          echo "${new_mode}" > "${savedmode}"
           msg="${startmsg}"
           render_status "pomodoro" ${pomodoro_cycle} ${saved_cycle_count}
         fi
@@ -238,8 +283,10 @@ parse_args "$@"
         if [ "${sound}" == "on" ] ; then
           aplay "${DIR}/cow.wav"
         fi
+
         xnotify "${msg}"
         zenity --info --text="${msg}"
+        handle_custom_cmd "${mode}" "${new_mode}"
         echo "${current_time}" > "${savedtime}"
       else
         render_status ${mode} ${remaining_time} ${saved_cycle_count}
