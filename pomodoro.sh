@@ -34,26 +34,12 @@ function run_custom_cmd() {
 
 function custom_cmd_start() {
   local _mode="$1"
-  # Handle custom command for starting modes
-  if [[ "${_mode}" == "longbreak" ]]; then
-    run_custom_cmd long_break_start
-  elif [[ "${_mode}" == "shortbreak" ]]; then
-    run_custom_cmd short_break_start
-  elif [[ "${_mode}" == "pomodoro" ]]; then
-    run_custom_cmd pomodoro_start
-  fi
+  run_custom_cmd "${_mode}_start"
 }
 
 function custom_cmd_end() {
   local _mode="$1"
-  # Handle custom cmmand for finishing modes
-  if [[ "${_mode}" == "pomodoro" ]]; then
-    run_custom_cmd pomodoro_end
-  elif [[ "${_mode}" == "longbreak" ]]; then
-    run_custom_cmd long_break_end
-  elif [[ "${_mode}" == "shortbreak" ]]; then
-    run_custom_cmd short_break_end
-  fi
+  run_custom_cmd "${_mode}_end"
 }
 
 function terminate_pomodoro () {
@@ -259,7 +245,7 @@ parse_args "$@"
         invalid_pomodoro_time_margin=$((-short_break_cycle))
         if [ ${remaining_time} -lt ${invalid_pomodoro_time_margin} ] ; then
           terminate_pomodoro
-          run_custom_cmd pomodoro_end
+          custom_cmd_end "pomodoro"
           exit 1
         fi
 
