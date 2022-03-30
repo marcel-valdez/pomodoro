@@ -32,26 +32,27 @@ function run_custom_cmd() {
   fi
 }
 
-function handle_custom_cmd() {
-  local current_mode="$1"
-  local next_mode="$2"
-  # Handle custom cmmand for finishing modes
-  if [[ "${current_mode}" == "pomodoro" ]]; then
-    run_custom_cmd pomodoro_end
-  elif [[ "${current_mode}" == "longbreak" ]]; then
-    run_custom_cmd long_break_end
-  elif [[ "${current_mode}" == "shortbreak" ]]; then
-    run_custom_cmd short_break_end
-  fi
-
-
+function custom_cmd_start() {
+  local _mode="$1"
   # Handle custom command for starting modes
-  if [[ "${next_mode}" == "longbreak" ]]; then
+  if [[ "${_mode}" == "longbreak" ]]; then
     run_custom_cmd long_break_start
-  elif [[ "${next_mode}" == "shortbreak" ]]; then
+  elif [[ "${_mode}" == "shortbreak" ]]; then
     run_custom_cmd short_break_start
-  elif [[ "${next_mode}" == "pomodoro" ]]; then
+  elif [[ "${_mode}" == "pomodoro" ]]; then
     run_custom_cmd pomodoro_start
+  fi
+}
+
+function custom_cmd_end() {
+  local _mode="$1"
+  # Handle custom cmmand for finishing modes
+  if [[ "${_mode}" == "pomodoro" ]]; then
+    run_custom_cmd pomodoro_end
+  elif [[ "${_mode}" == "longbreak" ]]; then
+    run_custom_cmd long_break_end
+  elif [[ "${_mode}" == "shortbreak" ]]; then
+    run_custom_cmd short_break_end
   fi
 }
 
@@ -189,10 +190,13 @@ parse_args "$@"
   current_time=$( date +%s )
   if [ "${click}" == "yes" ] ; then
     if [ "${mode}" == "idle" ] ; then
+      custom_cmd_end "${mode}"
+      new_mode="pomodoro"
       xnotify "${startmsg}"
       echo "${current_time}" > "${savedtime}"
-      echo "pomodoro" > "${savedmode}"
+      echo "${new_mode}" > "${savedmode}"
       echo "0" > "${savedcyclecount}"
+      custom_cmd_start "${new_mode}"
     elif [[ "${mode}" =~ ^paused_.* ]] ; then
       resume_timer
       run_custom_cmd resume
@@ -270,23 +274,25 @@ parse_args "$@"
             msg="${endmsg_longbreak}"
             new_remaining_time=${long_break_cycle}
           fi
-          echo "${new_mode}" > "${savedmode}"
+
           echo "${cycle_count}" > "${savedcyclecount}"
           render_status ${new_mode} ${new_remaining_time} ${cycle_count}
         else
           new_mode="pomodoro"
-          echo "${new_mode}" > "${savedmode}"
           msg="${startmsg}"
           render_status "pomodoro" ${pomodoro_cycle} ${saved_cycle_count}
         fi
+
+        echo "${new_mode}" > "${savedmode}"
 
         if [ "${sound}" == "on" ] ; then
           aplay "${DIR}/cow.wav"
         fi
 
+        custom_cmd_end "${mode}"
         xnotify "${msg}"
         zenity --info --text="${msg}"
-        handle_custom_cmd "${mode}" "${new_mode}"
+        custom_cmd_start "${new_mode}"
         echo "${current_time}" > "${savedtime}"
       else
         render_status ${mode} ${remaining_time} ${saved_cycle_count}
