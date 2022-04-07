@@ -173,15 +173,60 @@ function render_status () {
   gen_click_tag
 }
 
-function display_info_dialog() {
-  if type yad &>/dev/null; then
-    yad --form --title="Pomodoro" \
-      --window-icon "${DIR}/icons/running${ICON_SIZE}.png" \
-      --button "OK:0" --borders=10 --on-top --skip-taskbar --center --text "$1"
-  elif type zenity &>/dev/null; then
-    zenity --info --text "$1"
+function display_info_dialog_yad() {
+  local msg="<span size='13pt' allow_breaks='true'>\n${1}</span>"
+  local timeout="$2"
+  if [[ "${timeout}" ]]; then
+    timeout=$((timeout*60))
   else
-    xnotify "Please install zenity or yad to interact with the plugin."
+    timeout=30
+  fi
+  local args=(
+    --form
+    --text="${msg}"
+    --width=200
+    --title="Pomodoro"
+    --window-icon "${DIR}/icons/running${ICON_SIZE}.png"
+    --image="${DIR}/icons/running${ICON_SIZE}.png"
+    --button="OK!!:1"
+    --undecorated
+    --align=center
+    --buttons-layout=center
+    --borders=10
+    --timeout="${timeout}"
+    --timeout-indicator=top
+    --skip-taskbar
+    --close-on-unfocus
+    --sticky
+    --on-top
+    --center
+  )
+
+  yad "${args[@]}"
+}
+
+function display_info_dialog_zenity() {
+  local msg="$1"
+  local timeout="$2"
+  if [[ "${timeout}" ]]; then
+    timeout=$((timeout*60))
+  else
+    timeout=30
+  fi
+  zenity --info --text="${msg}" --timeout "$((timeout*60))"
+}
+
+function display_info_dialog() {
+  local msg="$1"
+  local timeout="$2"
+
+  # TODO: Should we pause the timer while the dialog is shown?
+  if type yad &>/dev/null; then
+    display_info_dialog_yad "${msg}" "${timeout}"
+  elif type zenity &>/dev/null; then
+    display_info_dialog_zenity "${msg}" "${timeout}"
+  else
+    xnotify "Pomodoro" "${msg}"
   fi
 }
 
@@ -208,7 +253,6 @@ function display_pause_menu_yad() {
   yad "${args[@]}"
 }
 
-
 function display_pause_menu_zenity() {
   zenity --question --title="Pomodoro" \
     --window-icon "${DIR}/icons/running${ICON_SIZE}.png" \
@@ -223,7 +267,7 @@ function display_pause_menu() {
     display_pause_menu_zenity
     return $?
   else
-    notify-send "Pomodoro" "Please install zenity or yad to interact with the plugin."
+    xnotify "Pomodoro" "Please install zenity or yad to interact with the plugin."
     return 1
   fi
 }
@@ -364,7 +408,7 @@ function handle_pomodoro_mode() {
   maybe_play_sound
   custom_cmd_end "${mode}"
   xnotify "${_msg}"
-  display_info_dialog "${_msg}"
+  display_info_dialog "${_msg}" "${new_remaining_time}"
   custom_cmd_start "${new_mode}"
 }
 
@@ -406,7 +450,7 @@ function handle_break_mode() {
   maybe_play_sound
   custom_cmd_end "${mode}"
   xnotify "${START_POMODORO_MSG}"
-  display_info_dialog "${START_POMODORO_MSG}"
+  display_info_dialog "${START_POMODORO_MSG}" "${POMODORO_CYCLE}"
   custom_cmd_start "pomodoro"
   echo "pomodoro" > "${SAVED_MODE_FILE}"
   echo "${current_time}" > "${SAVED_TIME_FILE}"
@@ -443,8 +487,9 @@ function main() {
   exit 0
 }
 
-parse_args "$@"
-
-exec 8>"${LOCK}"
-flock -x 8
-main
+if ! (return 0 2>/dev/null); then
+  parse_args "$@"
+  exec 8>"${LOCK}"
+  flock -x 8
+  main
+fi
