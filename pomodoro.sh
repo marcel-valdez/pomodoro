@@ -9,7 +9,9 @@ SHORT_BREAK_TIME=10          # Time for the short break cycle (in minutes)
 LONG_BREAK_TIME=55           # Time for the long break cycle (in minutes)
 CYCLES_BETWEEN_LONG_BREAKS=3 # How many cycles should we do before long break
 NOTIFY_TIME=10               # Time for notification to hang (in seconds)
-CUSTOM_CMD="${HOME}/.pomodororc" # Default custom command handler
+CUSTOM_CMD=":"               # Default to no-op
+# Set default custom command to .pomodororc if it exists.
+[[ -f "${HOME}/.pomodororc" ]] && CUSTOM_CMD="${HOME}/.pomodororc"
 
 DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
